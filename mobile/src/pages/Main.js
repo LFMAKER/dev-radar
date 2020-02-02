@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Image, View, Text, TextInput, TouchableOpacity } from 'react-native';
-import MapView, { Marker, Callout } from 'react-native-maps'
+import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps'
 import { requestPermissionsAsync, getCurrentPositionAsync } from 'expo-location'
 import { MaterialIcons } from '@expo/vector-icons'
 
 import api from '../services/api';
+import { connect, disconnect, subscribeToNewDevs } from '../services/socket';
+
+ var mapStyle = require('../utils/json/mapstyle.json');
 
 function Main({ navigation }) {
 
@@ -14,13 +17,25 @@ function Main({ navigation }) {
     const [techs, setTechs] = useState('');
 
 
-    //Recupera todos os devs
-    //possível feature: pegas todos os devs da área
-    async function getAllDevs(){
-        const {latitude, longitude} = currentRegion;
-        const response = await api.get('/devs');
-        setDevs(response.data);
+    //Recupera todos os devs na área do usuário
+    async function getAllDevsInArea(){
+        
+        // if(techs === ''){
+            const {latitude, longitude} = currentRegion;
+            const response = await api.get('/searchbyarea', {
+                params: {
+                    latitude,
+                    longitude
+                }
+            });
+            setDevs(response.data.devs);   
+        // }else{
+        //     loadDevs();
+        // }         
+        
     }
+
+   
 
     useEffect(() => {//Obtendo Permissão e Utilizando GPS
         async function loadInitialPosition() {//Carregando posição inicial
@@ -30,20 +45,41 @@ function Main({ navigation }) {
                     enableHighAccuracy: true
                 });
                 
-                const { latitude, longitude } = coords;
-                setCurrentRegion({
-                    latitude,
-                    longitude,
-                    latitudeDelta: 0.04,
-                    longitudeDelta: 0.04
-                });
-            }
-        }
+                if(coords !==null){
 
+                    const { latitude, longitude } = coords;
+                    setCurrentRegion({
+                        latitude,
+                        longitude,
+                        latitudeDelta: 0.04,
+                        longitudeDelta: 0.04
+                    });
+                }
+
+            
+            }    
+        }
         loadInitialPosition();
-        getAllDevs();//Recuperando todos os devs
+
+
+
     }, [])
 
+    useEffect(() =>{//Escutando o socket.io
+        subscribeToNewDevs(dev => setDevs([...devs, dev]));
+    }, [devs])
+
+    function setupWebsocket() {
+        disconnect();
+
+        const { latitude, longitude } = currentRegion;
+        connect(
+            latitude,
+            longitude,
+            techs
+        );
+
+    }
 
     async function loadDevs(){//Carrega os Devs na região com a tech informada
         const {latitude, longitude} = currentRegion;
@@ -58,13 +94,16 @@ function Main({ navigation }) {
                 }
             });
             setDevs(response.data.devs);
-        }else{//Caso não tenha, retorna todos os devs
-            getAllDevs();
+            setupWebsocket();
+        }else{//Caso não tenha, retorna todos os devs da área
+            console.log("loaging devs...")
+            await getAllDevsInArea();
         }
     }
 
     async function handleRegionChanged(region){//Pega localização quando mover o mapa
         setCurrentRegion(region);
+        getAllDevsInArea();
     }
 
     if(!currentRegion){
@@ -76,7 +115,10 @@ function Main({ navigation }) {
     <MapView 
         onRegionChangeComplete={handleRegionChanged}
         initialRegion={currentRegion} 
-        style={styles.map}>
+        style={styles.map}
+        provider={PROVIDER_GOOGLE}
+        customMapStyle={mapStyle}
+        >
         {devs.map(dev => (
             <Marker 
             key={dev._id}
@@ -123,14 +165,15 @@ function Main({ navigation }) {
 
 const styles = StyleSheet.create({
     map: {
-        flex: 1
+        flex: 1,
+        display: "flex"
     },
     avatar: {
-        width: 54,
-        height: 54,
-        borderRadius: 4,
-        borderWidth: 4,
-        borderColor: '#fff'
+        width: 44,
+        height: 44,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#52de97'
     },
     callout: {
         width: 260,
@@ -148,7 +191,7 @@ const styles = StyleSheet.create({
     },
     searchForm: {
         position: 'absolute',
-        top: 20,
+        top: 40,
         left: 20,
         right: 20,
         zIndex: 5,
@@ -158,27 +201,34 @@ const styles = StyleSheet.create({
     searchInput: {
         flex: 1,
         height: 50,
-        backgroundColor: '#fff',
-        color: '#333',
+        backgroundColor: '#2a2a2a',
+        color: '#fff',
         borderRadius: 25,
         paddingHorizontal: 20,
         fontSize: 16,
-        shadowColor: '#000',
+        shadowColor: '#fff',
         shadowOpacity: 0.2,
         shadowOffset: {
-            width: 4,
-            height: 4,
+            width: 1,
+            height: 1,
         },
         elevation: 2
     },
     loadButton: {
         width: 50,
         height: 50,
-        backgroundColor: '#8e4dff',
+        backgroundColor: '#2a2a2a',
         borderRadius: 25,
         justifyContent: 'center',
         alignItems: 'center',
         marginLeft: 15,
+        shadowColor: '#fff',
+        shadowOpacity: 0.2,
+        shadowOffset: {
+            width: 1,
+            height: 1,
+        },
+        elevation: 5
     }
 });
 
